@@ -1,0 +1,3 @@
+- [ ] Add APScheduler job to auto-check tracked websites and update summary/hash/text (`backend/app/main.py`)
+- [ ] Adjust Windows notification body format to match requirement example (`frontend/src/App.tsx`)
+- [ ] Run backend + frontend/electron dev to sanity check endpoints and UI

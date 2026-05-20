@@ -1,0 +1,111 @@
+Watchdog (Electron + React Vite + FastAPI) — Project Report
+
+1) Overview
+Watchdog is a dual-purpose tracker:
+- Website Radar: monitors tracked website pages for text changes and produces a 1-sentence AI summary of what changed.
+- Price Monitor: tracks product pages for price changes, stores price history, and alerts the user via native Windows notifications when the price drops to (or below) a configured target.
+
+2) Tech Stack
+Desktop layer
+- Electron (Windows): runs the React UI in a desktop window and exposes IPC for native notifications.
+
+Frontend
+- React (TypeScript) built with Vite
+- TailwindCSS (dark dashboard styling)
+- Recharts (line graph for price history)
+- lucide-react (icons)
+
+Backend
+- Python FastAPI
+- SQLite via Python’s built-in sqlite3
+- APScheduler (background scheduled checks)
+- requests + beautifulsoup4 (web scraping)
+
+3) Project Folder Structure
+- backend/
+  - requirements.txt
+  - app/
+    - main.py (FastAPI app, endpoints, scheduler)
+    - db.py (SQLite schema + connection)
+    - scraper.py (fetch_url_text, content_hash, extract_price)
+    - ollama.py (calls local Ollama model)
+    - schemas.py (Pydantic request models)
+
+- frontend/
+  - index.html, Tailwind/Vite config
+  - src/
+    - App.tsx (dashboard UI)
+    - api.ts (REST client to backend)
+    - types.ts (shared types)
+  - electron/
+    - main.ts (spawns FastAPI backend + handles notifications IPC)
+    - preload.ts (exposes window.electronAPI.notify)
+
+4) How the Project Runs (Procedure)
+A) Backend (FastAPI)
+- Start using Electron auto-launch (recommended):
+  - electron/main.ts spawns uvicorn with backend.app.main:app on http://127.0.0.1:8000.
+- Backend endpoints available:
+  - GET  /health
+  - Websites CRUD + check:
+    - GET  /websites
+    - POST /websites
+    - DELETE /websites/{website_id}
+    - POST /websites/{website_id}/check
+  - Products CRUD + check + history:
+    - GET  /products
+    - POST /products
+    - DELETE /products/{product_id}
+    - POST /products/{product_id}/check
+    - GET  /products/{product_id}/history
+  - AI summarizer:
+    - POST /summarize (compares old_text vs new_text)
+
+- Scheduled monitoring:
+  - APScheduler job `check-products`: every 15 minutes checks product pages, updates current_price, and appends price_history.
+  - APScheduler job `check-websites`: every 30 minutes checks website pages, compares content hash, and when changed updates last_content_hash/summary/last_checked_text.
+
+B) Frontend (React inside Electron)
+- electron/main.ts creates the BrowserWindow and loads Vite dev server in dev mode (or loads the built dist in production mode).
+- UI interactions call backend endpoints via fetch from src/api.ts.
+
+C) Native Notifications
+- Preload exposes:
+  - window.electronAPI.notify(title, body)
+- Electron main process handles IPC channel "watchdog:notify" and uses electron.Notification to display:
+  - Title: "Price Drop Alert"
+  - Body: "Price Drop Alert: Item is now $<price>!" when current_price <= target_price.
+
+5) AI Models Used
+- Local Ollama model via HTTP:
+  - Endpoint: http://127.0.0.1:11434/api/generate
+  - Model name: qwen3.5:4b
+
+- Usage:
+  - For websites: summarize_changes(old_text, new_text)
+    - The backend compares previously stored website text vs newly fetched text.
+    - It prompts the model to return exactly one sentence describing what changed.
+  - The frontend displays this AI-generated one-sentence summary for each website card.
+
+6) Implementation Notes / Important Details
+- Scraping:
+  - fetch_url_text removes script/style/noscript and extracts readable page text.
+  - content_hash uses SHA-256 over the extracted text.
+  - extract_price uses a regex to detect numeric prices prefixed by either $ or ₹.
+
+- Data Model (SQLite tables)
+  - tracked_websites:
+    - id, url (unique), last_content_hash, summary, last_checked_text
+  - tracked_products:
+    - id, url (unique), current_price, target_price
+  - price_history:
+    - id, product_id (FK), price, timestamp
+
+7) Current Build/Execution Caveat (Observed)
+During command execution in this environment, attempts to run:
+- npm build / tsc / python -c with command separators like '&'
+reported shell parsing limitations and missing tsc in that specific shell.
+Electron spawning the backend and normal dev workflow should work in a standard terminal setup where TypeScript tooling is available.
+
+End of report.
+
